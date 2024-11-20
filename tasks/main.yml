@@ -1,0 +1,321 @@
+
+#В роле выделены отдельные сценарии- здесь ниже -   для Centos7 и  php 7 -  и сов#совсем ниже - deb. Все это требует "подгонки по месту"
+#************выполнение задач под Centos****************
+
+
+tasks: 
+-name RunForCentos
+ 
+when ansible_os_family='Centos'
+#выполнение задач под centos
+ block
+    assert 
+     that
+      - ansible_facts='Centos' 
+     success_msg: "os_family Centos"
+ -name: install packages (с версии Питон 2.6 рекомендовано написано_здесь использовать этот компонент)
+Ansible.builtin.dnf:
+#переменную возьмет из цикла
+  loop:
+ - git
+
+  state: present
+  update_cache: yes
+
+ -name: nginx
+ #здесь я так понимаю нужна версия на что ставим
+ ansible.builtin.dnf:
+ name: 'http://nginx.org/packages/centos/6/noarch/RPMS/nginx-release-centos-6-0.el6.ngx.noarch.rpm'
+ state: present
+
+ -name: checkout master branch
+ #как я понял из описания целевого состояния нужно в папке srv/dest(?!) разверну ть локально репозиторий с веткой master
+
+  git: 
+ 
+#1. вначале инциализируем git в #директории srv- Обычно конечно в home git  Удивляет что папка srv #используется- в ней лежат данные для #всех системных служб.(!)
+
+md/srv/monicahq
+
+#инициализация- считаем что его нет еще
+git init
+#добавляем удаленный репозиторий
+
+ git remote add origin https://github.com/monicahq/monica
+
+#переключаемся на ветку master
+git checkout master
+
+#дальше не понимаю — вроде установка ключа для apt, но аналогичной вещи для yum нет
+И вообще sury
+перестал ключи использовать
+
+По умолчанию ключи во встроенном модуле Ansible выключены.
+
+
+#Еще ниже похоже идет развертывание PHP
+но с учетом описанного придется идти по другому пути: 
+
+перепишем тогда на работу с новым репозиторием
+
+ name: Add php repositories
+
+# Внимание! Поддержка 7 закончилась, репо SURY заблокировал Россию- используем другой https://rpms.remirepo.net/enterprise/  но Enterprise Linux 7 has reached its "End Of Life" in May 2024.
+
+ansible.builtin.dnf:
+    name: 'https://rpms.remirepo.net/enterprise/remi-release-7.rpm'
+    state: presentUvh hms.remirepo.net/enterpri
+- name: install php dependencies
+Downloading Package Dependencies
+ansible.builtin.dnf:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+# sudo dnf download --resolve <package-name>
+
+
+ - name: install php 
+ansible.builtin.dnf:
+    name: https://rpms.remirepo.net/enterprise/remi-release-7.rpm
+    state: present
+    update_cache: yes
+#не все пакеты нашел в репозитории  
+ loop:
+    - php7.3
+    - php7.3-cli
+    - php7.3-intl
+    - php7.3-iconv
+    - php7.3-fpm
+    - php7.3-curl
+    - php7.3-gd
+    - php7.3-mysql
+    - php7.3-mysqli
+    - php7.3-opcache
+    - php7.3-json
+    - php7.3-mbstring
+    - php7.3-soap
+    - php7.3-xml
+    - php7.3-zip
+    - php7.3-gmp
+    - php7.3-bcmath
+    - php-memcached
+    - php-xdebug
+    - php-redis
+
+- name: reload service php-fcgi
+  become: true
+  systemd:
+    name: php7.3-fpm
+    state: reloaded
+
+- name: install composer
+  include_role:
+    name: geerlingguy.composer
+
+- name: install composer dependencies
+  composer:
+    command: install
+    working_dir: /srv/monicahq
+- name: prepare configuration
+  template:
+    src: env.j2
+    dest: /srv/monicahq/.env
+
+- name: Run an initial key generation
+  command: "/usr/bin/php /srv/monicahq/artisan key:generate"
+  args:
+    chdir: /srv/monicahq/
+  tags: molecule-notest
+
+- name: Run an initial migration
+  command: "/usr/bin/php /srv/monicahq/artisan setup:production --force"
+  args:
+    chdir: /srv/monicahq/
+  tags: molecule-notest
+
+- name: Place a scheduler cron job
+  cron:
+    user: monicahq
+    name: "scheduler"
+    job: "/usr/bin/php /srv/monicahq/artisan schedule:run"
+
+- name: Recursively change ownership of a directory
+  file:
+    path: /srv/monicahq
+    state: directory
+    recurse: yes
+    owner: monicahq
+    group: www-data
+
+- name: Put right permissions to storage
+  file:
+    path: /srv/monicahq/storage
+    state: directory
+    recurse: yes
+    mode: g+w
+- name: Create nginx vhost config
+  template:
+    src: monicahq.conf.j2
+    dest: /etc/nginx/sites-enabled/monica.conf
+ cp_ /etc/nginx/sites-enabled/monica.con
+- name: Remove default nginx configuration
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: reload service nginx
+  become: true
+  systemd:
+    name: nginx
+    state: reloaded
+
+  become: true
+  systemd:
+    name: nginx
+    state: reloaded
+
+When: ansible_facts= «CentOS»
+
+rescue:
+       - name: Print when errors
+         ansible.builtin.debug:
+           msg: 'I caught an error, can do stuff here to fix it, :-)'
+
+  when: ansible_os_family='Centos'
+     #********************Выполнение задач под DEB***************
+
+-name: RunForDEB
+
+  -assert 
+    that
+    ansible_facts="Debian"
+    success_msg:"OS_Debian"
+---
+ -name: install packages
+ apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop:
+    - git
+    - apt-transport-https
+    - nginx
+
+ -name: check out master branch
+  git:
+    repo: 'https://github.com/monicahq/monica'
+    dest: /srv/monicahq
+    version: master
+
+ -name: Add the user
+  user:
+    name: monicahq
+    shell: /usr/bin/nologin
+    home: /srv/monicahq
+
+ -name: Install sury key
+  apt_key:
+    url: 'https://packages.sury.org/php/apt.gpg'
+    state: present
+
+- name: Add sury repositories
+  apt_repository:
+    repo: "deb https://packages.sury.org/php/ stretch main"
+    state: present
+    update_cache: yes
+    filename: 'sury'
+
+- name: install php dependencies
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop:
+    - php7.3
+    - php7.3-cli
+    - php7.3-intl
+    - php7.3-iconv
+    - php7.3-fpm
+    - php7.3-curl
+    - php7.3-gd
+    - php7.3-mysql
+    - php7.3-mysqli
+    - php7.3-opcache
+    - php7.3-json
+    - php7.3-mbstring
+    - php7.3-soap
+    - php7.3-xml
+    - php7.3-zip
+    - php7.3-gmp
+    - php7.3-bcmath
+    - php-memcached
+    - php-xdebug
+    - php-redis
+
+- name: reload service php-fcgi
+  become: true
+  systemd:
+    name: php7.3-fpm
+    state: reloaded
+
+- name: install composer
+  include_role:
+    name: geerlingguy.composer
+
+- name: install composer dependencies
+  composer:
+    command: install
+    working_dir: /srv/monicahq
+- name: prepare configuration
+  template:
+    src: env.j2
+    dest: /srv/monicahq/.env
+
+- name: Run an initial key generation
+  command: "/usr/bin/php /srv/monicahq/artisan key:generate"
+  args:
+    chdir: /srv/monicahq/
+  tags: molecule-notest
+
+- name: Run an initial migration
+  command: "/usr/bin/php /srv/monicahq/artisan setup:production --force"
+  args:
+    chdir: /srv/monicahq/
+  tags: molecule-notest
+
+- name: Place a scheduler cron job
+  cron:
+    user: monicahq
+    name: "scheduler"
+    job: "/usr/bin/php /srv/monicahq/artisan schedule:run"
+
+- name: Recursively change ownership of a directory
+  file:
+    path: /srv/monicahq
+    state: directory
+    recurse: yes
+    owner: monicahq
+    group: www-data
+
+- name: Put right permissions to storage
+  file:
+    path: /srv/monicahq/storage
+    state: directory
+    recurse: yes
+    mode: g+w
+- name: Create nginx vhost config
+  template:
+    src: monicahq.conf.j2
+    dest: /etc/nginx/sites-enabled/monica.conf
+- name: Remove default nginx configuration
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+- name: reload service nginx
+  become: true
+  systemd:
+    name: nginx
+    state: reloaded
+
+  when: ansible_os_family='DEBIAN'
+

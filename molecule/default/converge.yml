@@ -1,0 +1,8 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: "Include_role"
+      include_role:
+        name: "sre-ansible-role-monica"
